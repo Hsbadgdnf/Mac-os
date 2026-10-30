@@ -1,0 +1,42 @@
+name: macOS Remote Desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Install and configure ngrok
+        env:
+          NGROK_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          brew install --cask ngrok
+          ngrok config add-authtoken $NGROK_TOKEN
+
+      - name: Enable Screen Sharing (VNC)
+        env:
+          VNC_PASS: ${{ secrets.VNC_PASSWORD }}
+        run: |
+          # Set the runner user password
+          sudo dscl . -passwd /Users/runner "$VNC_PASS"
+          
+          # Enable Apple Remote Desktop / VNC
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on \
+            -privs -all -allowAccessFor -allUsers \
+            -clientopts -setvnclegacy -vnclegacy yes \
+            -restart -agent -console
+
+      - name: Start ngrok Tunnel & Keep Alive
+        run: |
+          # Forward default macOS VNC port 5900
+          ngrok tcp 5900 --log=stdout &
+          sleep 5
+          
+          # Fetch the public TCP endpoint
+          curl -s http://127.0.0.1:4040/api/tunnels | grep -o 'tcp://[^"]*'
+          
+          # Keep the session alive (GitHub job limit is 6 hours)
+          sleep 21600
+          
